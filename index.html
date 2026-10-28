@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="cs" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Předanamnéza – Ordinace</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- QRCode generator library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .chat-bubble {
+            max-width: 85%;
+            animation: fadeIn 0.3s ease-out forwards;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 h-full flex flex-col">
+
+    <!-- Hlavička aplikace -->
+    <header class="bg-indigo-600 text-white shadow-md py-4 px-6 flex justify-between items-center z-10">
+        <div class="flex items-center space-x-3">
+            <div class="bg-white/10 p-2.5 rounded-xl backdrop-blur-sm">
+                <i class="fa-solid fa-stethoscope text-xl"></i>
+            </div>
+            <div>
+                <h1 class="font-bold text-lg leading-tight">AI Předanamnéza</h1>
+                <p class="text-xs text-indigo-200">Chytrý vstupní dotazník pro čekárnu</p>
+            </div>
+        </div>
+        <div class="flex items-center space-x-2">
+            <button onclick="openDoctorDashboard()" class="bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-lg text-xs font-medium border border-white/20 transition-all flex items-center space-x-1.5">
+                <i class="fa-solid fa-user-doctor"></i>
+                <span class="hidden sm:inline">Režim lékaře / QR</span>
+            </button>
+            <div id="patientStatusBadge" class="hidden bg-indigo-700/80 px-3 py-1.5 rounded-lg text-xs font-medium border border-indigo-500/50 flex items-center space-x-2">
+                <i class="fa-solid fa-user-shield"></i>
+                <span id="displayPatientId">ID: --</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Hlavní kontejner -->
+    <main class="flex-1 max-w-3xl w-full mx-auto flex flex-col p-4 md:p-6 overflow-hidden">
+
+        <!-- KROK 1: Zadání identifikačního čísla (anonymizace) -->
+        <div id="stepIdCard" class="flex-1 flex items-center justify-center">
+            <div class="bg-white p-8 rounded-3xl shadow-xl border border-slate-100 max-w-md w-full text-center">
+                <div class="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-5 text-2xl shadow-inner">
+                    <i class="fa-solid fa-fingerprint"></i>
+                </div>
+                <h2 class="text-2xl font-bold text-slate-900 mb-2">Vítejte v čekárně</h2>
+                <p class="text-sm text-slate-500 mb-6">Zadejte prosím své identifikační číslo nebo kód z lístku z recepce pro zahájení zabezpečené předanamnézy.</p>
+                
+                <form id="idForm" onsubmit="startAnamnesis(event)" class="space-y-4">
+                    <div>
+                        <input type="text" id="patientIdInput" required placeholder="Např. 405 nebo kód žetonu" 
+                            class="w-full px-4 py-3.5 rounded-2xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-center text-lg font-semibold tracking-wider placeholder:font-normal placeholder:text-slate-400 outline-none transition-all">
+                    </div>
+                    <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] text-white font-semibold py-3.5 px-6 rounded-2xl shadow-lg shadow-indigo-600/20 transition-all flex items-center justify-center space-x-2">
+                        <span>Zahájit rozhovor s AI</span>
+                        <i class="fa-solid fa-arrow-right text-sm"></i>
+                    </button>
+                </form>
+                <div class="mt-6 flex items-center justify-center space-x-2 text-xs text-slate-400">
+                    <i class="fa-solid fa-lock text-emerald-500"></i>
+                    <span>Data jsou anonymizována a určena pouze pro lékaře</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- KROK 2: Chatové rozhraní pro AI doptávání -->
+        <div id="stepChatInterface" class="hidden flex-1 flex flex-col bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden">
+            <!-- Informační lišta chatu -->
+            <div class="bg-slate-50 border-b border-slate-100 px-6 py-3 flex justify-between items-center text-xs text-slate-500">
+                <span class="flex items-center space-x-1.5">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span>AI Asistent aktivní (Anamnéza)</span>
+                </span>
+                <span id="chatProgress" class="font-medium bg-slate-200/60 px-2.5 py-1 rounded-md text-slate-600">Otázka 1 / max 4</span>
+            </div>
+
+            <!-- Historie zpráv -->
+            <div id="chatMessages" class="flex-1 p-4 md:p-6 overflow-y-auto space-y-4 bg-slate-50/50">
+                <!-- Dynamicky vkládané zprávy -->
+            </div>
+
+            <!-- Rychlé odpovědi (chips / návrhy) -->
+            <div id="quickSuggestionsContainer" class="px-4 py-2.5 bg-white border-t border-slate-100 flex flex-wrap gap-2 transition-all">
+                <!-- Dynamické chips pro rychlé kliknutí -->
+            </div>
+
+            <!-- Vstupní formulář pro text -->
+            <div class="p-4 bg-white border-t border-slate-100">
+                <form id="chatForm" onsubmit="handleUserMessage(event)" class="flex items-center space-x-2">
+                    <input type="text" id="userInput" placeholder="Napište odpověď nebo vyberte výše..." autocomplete="off"
+                        class="flex-1 px-4 py-3.5 rounded-2xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-sm transition-all">
+                    <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white w-12 h-12 rounded-2xl flex items-center justify-center shadow-md transition-all shrink-0">
+                        <i class="fa-solid fa-paper-plane text-sm"></i>
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- KROK 3: Výsledná sumární anamnéza pro lékaře -->
+        <div id="stepSummary" class="hidden flex-1 flex flex-col bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden">
+            <div class="p-6 bg-indigo-50/60 border-b border-indigo-100 flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                    <div class="w-12 h-12 bg-indigo-600 text-white rounded-2xl flex items-center justify-center shadow-md">
+                        <i class="fa-solid fa-file-medical text-lg"></i>
+                    </div>
+                    <div>
+                        <h2 class="font-bold text-lg text-slate-900">Souhrn předanamnézy</h2>
+                        <p class="text-xs text-indigo-700 font-medium" id="summaryPatientIdBadge">Pacient ID: --</p>
+                    </div>
+                </div>
+                <div class="bg-emerald-100 text-emerald-800 px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center space-x-1.5">
+                    <i class="fa-solid fa-check"></i>
+                    <span>Hotovo</span>
+                </div>
+            </div>
+
+            <div class="flex-1 p-6 overflow-y-auto space-y-6">
+                <div class="bg-slate-50 border border-slate-200/80 rounded-2xl p-5 shadow-sm">
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center space-x-2">
+                        <i class="fa-solid fa-notes-medical text-indigo-600"></i>
+                        <span>Chronologická strukturovaná anamnéza</span>
+                    </h3>
+                    <div id="summaryContentText" class="prose prose-slate text-sm leading-relaxed whitespace-pre-line text-slate-700">
+                        <!-- Zde bude vygenerovaný text -->
+                    </div>
+                </div>
+
+                <div class="bg-amber-50 border border-amber-200/60 rounded-2xl p-4 flex items-start space-x-3">
+                    <i class="fa-solid fa-circle-info text-amber-600 mt-0.5"></i>
+                    <p class="text-xs text-amber-900 leading-relaxed">
+                        Předanamnéza byla úspěšně dokončena. Nyní prosím ukažte tento výsledek svému lékaři nebo jej zkopírujte / odešlete.
+                    </p>
+                </div>
+            </div>
+
+            <div class="p-4 bg-white border-t border-slate-100 flex flex-col sm:flex-row gap-3">
+                <button onclick="copySummaryToClipboard()" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-3.5 px-4 rounded-2xl transition-all flex items-center justify-center space-x-2 text-sm">
+                    <i class="fa-regular fa-copy"></i>
+                    <span>Kopírovat do schránky</span>
+                </button>
+                <button onclick="sendSummaryToEmail()" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3.5 px-4 rounded-2xl shadow-lg shadow-indigo-600/20 transition-all flex items-center justify-center space-x-2 text-sm">
+                    <i class="fa-solid fa-envelope"></i>
+                    <span>Odeslat do ordinace (E-mail)</span>
+                </button>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- MODÁLNÍ OKNO PRO REŽIM LÉKAŘE A QR KÓD -->
+    <div id="doctorModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs hidden z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl shadow-2xl max-w-lg w-full p-6 space-y-5 animate-fadeIn">
+            <div class="flex justify-between items-center border-b border-slate-100 pb-4">
+                <div class="flex items-center space-x-2 text-indigo-600">
+                    <i class="fa-solid fa-qrcode text-xl"></i>
+                    <h3 class="font-bold text-lg text-slate-900">Správa pro čekárnu / dveře</h3>
+                </div>
+                <button onclick="closeDoctorDashboard()" class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 transition-all">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <div class="space-y-4 text-sm text-slate-600">
+                <p>Tento QR kód umístěte na vchodové dveře ordinace nebo do čekárny. Pacienti po naskenování fotoaparátem v mobilním telefonu otevřou tuto webovou aplikaci.</p>
+                
+                <div class="flex flex-col items-center justify-center bg-slate-50 p-6 rounded-2xl border border-slate-200/60">
+                    <div id="qrcodeContainer" class="bg-white p-3 rounded-xl shadow-sm mb-3"></div>
+                    <span id="currentUrlDisplay" class="text-xs text-indigo-600 font-mono text-center break-all"></span>
+                </div>
+
+                <div class="bg-indigo-50/60 rounded-2xl p-4 flex items-start space-x-3">
+                    <i class="fa-solid fa-lightbulb text-indigo-600 mt-0.5"></i>
+                    <p class="text-xs text-indigo-900 leading-relaxed">
+                        Tip: Pro nejlepší funkčnost v reálném provozu můžete aplikaci hostovat zdarma např. na Vercel, GitHub Pages nebo Netlify a vytisknout si QR kód s touto webovou adresou.
+                    </p>
+                </div>
+            </div>
+
+            <div class="pt-2 flex space-x-3">
+                <button onclick="window.print()" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-3 px-4 rounded-xl text-sm transition-all flex items-center justify-center space-x-2">
+                    <i class="fa-solid fa-print"></i>
+                    <span>Vytisknout QR kód</span>
+                </button>
+                <button onclick="closeDoctorDashboard()" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-4 rounded-xl text-sm transition-all">
+                    Zavřít
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Script s logikou aplikace a voláním Gemini API -->
+    <script>
+        let patientId = "";
+        let chatHistory = [];
+        let currentTurnCount = 0;
+        const maxTurns = 5; // Zvýšeno na 5 kol pro důkladnější anamnézu
+
+        // Vylepšený systémový prompt pro AI s požadavkem na podrobnější možnosti a suspektní diagnózu
+        const systemInstructionText = `Jsi přísný, vysoce odborný, ale empatický lékařský asistent pro předanamnézu pacientů v ordinaci praktického lékaře. 
+Tvým úkolem je:
+1. Systematicky rozebrat stav pacienta: zjistit přesný počátek potíží, čím to začalo, kompletní spektrum všech souvisejících symptomů a zda jsou přítomny i jiné doprovodné obtíže.
+2. Vždy se ptej na jednu jasnou a cílenou doplňující otázku.
+3. Ke každé otázce nabídni VŽDY 4 až 5 konkrétních a rozmanitých možností na kliknutí (chips), aby pacient nemusel složitě vypisovat text (např. u počátku: "Před 2 dny", "Včera náhle", "Trvá už týden", "Postupně se zhoršuje", "Jiné...").
+4. V průběhu rozhovoru interně vyhodnocuj pravděpodobnou (suspektní) pracovní diagnózu. V závěrečném shrnutí pro lékaře tuto suspektní diagnózu explicitně uveď.
+5. NIKDY neodbíhej od tématu zdravotního stavu. Pokud pacient odbočí, slušně ho vrať k anamnéze.
+
+DŮLEŽITÉ: Odpovídej VÝHRADNĚ jako validní JSON objekt. Příklad formátu:
+{
+  "question": "Jak přesně potíže začaly a jak dlouho již trvají?",
+  "suggestions": ["Začalo to náhle včera", "Rozvíjí se to už 3 dny", "Trvá to přes týden", "Objevilo se to po prochladnutí", "Už je to téměř pryč"]
+}`;
+
+        function startAnamnesis(e) {
+            e.preventDefault();
+            const inputVal = document.getElementById('patientIdInput').value.trim();
+            if(!inputVal) return;
+            
+            patientId = inputVal;
+            document.getElementById('displayPatientId').innerText = `ID: ${patientId}`;
+            document.getElementById('patientStatusBadge').classList.remove('hidden');
+            
+            // Přepnutí obrazovek
+            document.getElementById('stepIdCard').classList.add('hidden');
+            document.getElementById('stepChatInterface').classList.remove('hidden');
+
+            // Úvodní zpráva od AI
+            initChatSession();
+        }
+
+        async function callGeminiAPI(messagesPayload) {
+            const apiKey = ""; // Poskytnuto automaticky prostředí Canvas
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+
+            const payload = {
+                contents: messagesPayload,
+                systemInstruction: {
+                    parts: [{ text: systemInstructionText }]
+                },
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: "OBJECT",
+                        properties: {
+                            question: { type: "STRING" },
+                            suggestions: {
+                                type: "ARRAY",
+                                items: { type: "STRING" }
+                            }
+                        },
+                        propertyOrdering: ["question", "suggestions"]
+                    }
+                }
+            };
+
+            // Implementace exponenciálního backoff pro spolehlivost
+            let delay = 1000;
+            for (let i = 0; i < 3; i++) {
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    const result = await response.json();
+                    const jsonString = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (jsonString) {
+                        return JSON.parse(jsonString);
+                    }
+                } catch (err) {
+                    console.warn(`Pokus ${i+1} selhal, zkouším znovu...`, err);
+                    await new Promise(res => setTimeout(res, delay));
+                    delay *= 2;
+                }
+            }
+            // Fallback pokud API selže
+            return {
+                question: "Máte nějaké další doprovodné příznaky, které byste chtěl/a uvést?",
+                suggestions: ["Žádné další", "Cítím se unavený/á", "Mám mírnou teplotu"]
+            };
+        }
+
+        async function initChatSession() {
+            appendMessage("Dobrý den, vítejte v předanamnestickém dotazníku. Popište mi prosím co nejpřesněji, s jakými hlavními potížemi dnes přicházíte.", "model");
+            
+            chatHistory.push({
+                role: "user",
+                parts: [{ text: `Pacient s ID ${patientId} zahájil anamnézu v čekárně.` }]
+            });
+
+            setSuggestions(["Akutní rýma a ucpaný nos", "Bolest v krku a polykací potíže", "Kašel (suchý nebo vlhký)", "Zvýšená teplota / horečka", "Bolest hlavy a celková únava"]);
+        }
+
+        async function handleUserMessage(e) {
+            if(e) e.preventDefault();
+            const inputEl = document.getElementById('userInput');
+            const text = inputEl.value.trim();
+            if(!text) return;
+
+            inputEl.value = "";
+            appendMessage(text, "user");
+            document.getElementById('quickSuggestionsContainer').innerHTML = ""; // Vymazat návrhy
+
+            currentTurnCount++;
+            document.getElementById('chatProgress').innerText = `Otázka ${Math.min(currentTurnCount + 1, maxTurns)} / max ${maxTurns}`;
+
+            chatHistory.push({
+                role: "user",
+                parts: [{ text: text }]
+            });
+
+            // Kontrola zda již ukončit rozhovor a vygenerovat sumář
+            if (currentTurnCount >= maxTurns) {
+                generateChronologicalSummary();
+                return;
+            }
+
+            // Zobrazení indikátoru načítání
+            showTypingIndicator();
+
+            // Volání API
+            const aiResponse = await callGeminiAPI(chatHistory);
+            removeTypingIndicator();
+
+            if (aiResponse && aiResponse.question) {
+                appendMessage(aiResponse.question, "model");
+                chatHistory.push({
+                    role: "model",
+                    parts: [{ text: aiResponse.question }]
+                });
+
+                if (aiResponse.suggestions && aiResponse.suggestions.length > 0) {
+                    setSuggestions(aiResponse.suggestions);
+                }
+            } else {
+                generateChronologicalSummary();
+            }
+        }
+
+        function appendMessage(text, sender) {
+            const container = document.getElementById('chatMessages');
+            const wrapper = document.createElement('div');
+            wrapper.className = `flex ${sender === 'user' ? 'justify-end' : 'justify-start'}`;
+
+            const bubble = document.createElement('div');
+            bubble.className = `chat-bubble px-4 py-3 rounded-2xl text-sm leading-relaxed shadow-sm ${
+                sender === 'user' 
+                    ? 'bg-indigo-600 text-white rounded-br-xs' 
+                    : 'bg-white text-slate-700 border border-slate-100 rounded-bl-xs'
+            }`;
+            bubble.innerText = text;
+
+            wrapper.appendChild(bubble);
+            container.appendChild(wrapper);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function setSuggestions(suggestions) {
+            const container = document.getElementById('quickSuggestionsContainer');
+            container.innerHTML = "";
+            suggestions.forEach(sug => {
+                const btn = document.createElement('button');
+                btn.type = "button";
+                btn.className = "text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-medium px-3 py-2 rounded-xl transition-all border border-indigo-100/60 active:scale-95";
+                btn.innerText = sug;
+                btn.onclick = () => {
+                    document.getElementById('userInput').value = sug;
+                    handleUserMessage(null);
+                };
+                container.appendChild(btn);
+            });
+        }
+
+        let typingIndicatorId = null;
+        function showTypingIndicator() {
+            const container = document.getElementById('chatMessages');
+            const wrapper = document.createElement('div');
+            wrapper.id = "typingIndicator";
+            wrapper.className = "flex justify-start";
+            wrapper.innerHTML = `<div class="bg-white text-slate-400 px-4 py-3 rounded-2xl text-xs border border-slate-100 shadow-sm flex items-center space-x-1.5">
+                <i class="fa-solid fa-circle animate-bounce" style="animation-delay: 0ms"></i>
+                <i class="fa-solid fa-circle animate-bounce" style="animation-delay: 150ms"></i>
+                <i class="fa-solid fa-circle animate-bounce" style="animation-delay: 300ms"></i>
+                <span class="ml-2 font-medium">AI formuluje doplňující otázku...</span>
+            </div>`;
+            container.appendChild(wrapper);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function removeTypingIndicator() {
+            const el = document.getElementById('typingIndicator');
+            if(el) el.remove();
+        }
+
+        async function generateChronologicalSummary() {
+            document.getElementById('stepChatInterface').classList.add('hidden');
+            document.getElementById('stepSummary').classList.remove('hidden');
+            document.getElementById('summaryPatientIdBadge').innerText = `Pacient ID: ${patientId}`;
+
+            const summaryContainer = document.getElementById('summaryContentText');
+            summaryContainer.innerHTML = `<div class="flex items-center space-x-2 text-indigo-600 py-4"><i class="fa-solid fa-spinner animate-spin"></i><span>Generuji chronologickou anamnézu a pracovní suspektní diagnózu pro lékaře...</span></div>`;
+
+            const summaryPayload = {
+                contents: [
+                    ...chatHistory,
+                    { role: "user", parts: [{ text: "Na základě celého rozhovoru vytvoř přehlednou, chronologicky uspořádanou lékařskou předanamnézu. Zahrň přesný počátek, vývoj symptomů, doprovodné obtíže a na závěr přidej sekci 'Suspektní pracovní diagnóza' s odhadem pro praktického lékaře. Piš profesionálním lékařským stylem v češtině." }] }
+                ]
+            };
+
+            const apiKey = "";
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(summaryPayload)
+                });
+                const result = await response.json();
+                const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                if(text) {
+                    summaryContainer.innerText = text;
+                } else {
+                    summaryContainer.innerText = "Nepodařilo se vygenerovat detailní sumář. Zkontrolujte prosím chatovací záznam.";
+                }
+            } catch (err) {
+                summaryContainer.innerText = "Chyba při komunikaci se serverem při generování souhrnu.";
+            }
+        }
+
+        function copySummaryToClipboard() {
+            const text = `--- PŘEDANAMNÉZA PACIENTA (ID: ${patientId}) ---\n\n` + document.getElementById('summaryContentText').innerText;
+            document.execCommand('copy');
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text);
+            }
+            alertCustom("Souhrn byl zkopírován do schránky.");
+        }
+
+        function sendSummaryToEmail() {
+            const text = encodeURIComponent(`--- PŘEDANAMNÉZA PACIENTA (ID: ${patientId}) ---\n\n` + document.getElementById('summaryContentText').innerText);
+            window.location.href = `mailto:ordinace@lekai.cz?subject=Předanamnéza pacient ID ${patientId}&body=${text}`;
+        }
+
+        function openDoctorDashboard() {
+            document.getElementById('doctorModal').classList.remove('hidden');
+            // Generování QR kódu s aktuální URL
+            const currentUrl = window.location.href;
+            document.getElementById('currentUrlDisplay').innerText = currentUrl;
+            
+            const qrcodeContainer = document.getElementById('qrcodeContainer');
+            qrcodeContainer.innerHTML = "";
+            new QRCode(qrcodeContainer, {
+                text: currentUrl,
+                width: 180,
+                height: 180,
+                colorDark: "#312e81",
+                colorLight: "#ffffff",
+                correctLevel: QRCode.CorrectLevel.H
+            });
+        }
+
+        function closeDoctorDashboard() {
+            document.getElementById('doctorModal'].classList.add('hidden');
+        }
+
+        function alertCustom(msg) {
+            const div = document.createElement('div');
+            div.className = "fixed bottom-5 right-5 bg-slate-900 text-white px-5 py-3 rounded-2xl shadow-2xl text-xs font-medium z-50 animate-bounce";
+            div.innerText = msg;
+            document.body.appendChild(div);
+            setTimeout(() => div.remove(), 3000);
+        }
+    </script>
+</body>
+</html>
